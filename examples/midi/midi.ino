@@ -1,5 +1,31 @@
+/*
+ * Copyright 2018 Chris Hansen
+ * TODO: license
+ * 
+ * This code goes with the design for the Modolin, a portable instrument
+ * with similar fingering to a violin.
+ * 
+ * MPR121 pinouts correspond to the following fingers:
+ * 
+ * 0 = right index finger = G string
+ * 1 = right middle finger = D string
+ * 2 = right ring finger = A string
+ * 3 = right pinky finger = E string
+ * 4 = left index finger = first finger
+ * 5 = left middle finger = second finger
+ * 6 = left ring finger = third finger
+ * 7 = left pinky finger = fourth finger
+ * 8 = right thumb = sharp
+ * 9 = left thumb = flat
+ * 
+ * --- Derived from the following code
+ * Copyright 2017 Don Coleman: Arduino 101 Bluetooth MIDI Controller
+ * Adafruit midi (TODO)
+ */
+
 #include <Arduino.h>
 #include <SPI.h>
+#include "Adafruit_MPR121.h"
 #include "Adafruit_BLE.h"
 #include "Adafruit_BluefruitLE_SPI.h"
 #include "Adafruit_BluefruitLE_UART.h"
@@ -12,6 +38,34 @@
 
 #define FACTORYRESET_ENABLE         1
 #define MINIMUM_FIRMWARE_VERSION    "0.7.0"
+
+#define _BV(bit) (1 << (bit)) 
+
+Adafruit_MPR121 cap = Adafruit_MPR121();
+
+// TODO: These bits are not used with the current code. Remove?
+// Keeps track of the last pins touched
+// so we know when buttons are 'released'
+uint16_t lasttouched = 0;
+uint16_t currtouched = 0;
+
+//Buffer to hold 5 bytes of MIDI data. Note the timestamp is forced
+uint8_t midiData[] = {0x80, 0x80, 0x00, 0x00, 0x00};
+
+int midiChannel = 0;
+
+int g2 = 55;
+
+// increment of notes by [string][finger]
+int fingerSteps[4][5] = {
+  { 0, 2, 4, 5, 7 }, // G string
+  { 7, 9, 11, 12, 14 }, // D string
+  { 14, 16, 17, 19, 21 }, // A string
+  { 21, 22, 24, 26, 28 }  // E string
+};
+
+int lastNote = -1; // none
+int currNote = -1; // none
 
 // This app was tested on iOS with the following apps:
 //
@@ -85,15 +139,29 @@ void BleMidiRX(uint16_t timestamp, uint8_t status, uint8_t byte1, uint8_t byte2)
   Serial.println();
 }
 
-void setup(void)
+void playNote(int note) {
+  Serial.print("play "); Serial.println(currNote);
+  midi.send(0x90, note, 0x64);
+}
+
+void releaseNote(uint8_t note) {
+  Serial.print("release "); Serial.println(currNote);
+  midi.send(0x80, note, 0x64);
+}
+
+void setupTouchSensor() {
+  Serial.println("Looking for MPR121 Capacitive Touch Sensor"); 
+  // Default address is 0x5A, if tied to 3.3V its 0x5B
+  // If tied to SDA its 0x5C and if SCL then 0x5D
+  if (!cap.begin(0x5A)) {
+    Serial.println("MPR121 not found, check wiring?");
+    while (1);
+  }
+  Serial.println("MPR121 found!");
+}
+
+void setupBluetooth()
 {
-  while (!Serial);  // required for Flora & Micro
-  delay(500);
-
-  Serial.begin(115200);
-  Serial.println(F("Adafruit Bluefruit MIDI Example"));
-  Serial.println(F("---------------------------------------"));
-
   /* Initialise the module */
   Serial.print(F("Initialising the Bluefruit LE module: "));
 
@@ -136,8 +204,21 @@ void setup(void)
   Serial.print(F("Waiting for a connection..."));
 }
 
-void loop(void)
+
+void setup(void)
 {
+//  while (!Serial);  // required for Flora & Micro
+//  delay(500);
+
+  Serial.begin(115200);
+  Serial.println(F("Adafruit Bluefruit MIDI Example"));
+  Serial.println(F("---------------------------------------"));
+
+  setupBluetooth();
+  setupTouchSensor();
+}
+
+void loop() {
   // interval for each scanning ~ 500ms (non blocking)
   ble.update(500);
 
@@ -145,22 +226,43 @@ void loop(void)
   if (! isConnected)
     return;
 
-  Serial.print("Sending pitch ");
-  Serial.println(current_note, HEX);
+  // Get the currently touched pads
+  currtouched = cap.touched();
 
-  // send note on
-  midi.send(0x90, current_note, 0x64);
-  delay(500);
+  int string = -1;
+  int finger = 0;
+  int halfStep = 0;
+  
+  for (uint8_t i=0; i<12; i++) {
+    if (currtouched & _BV(i)) {
+      // Serial.print(i); Serial.println(" touched");
+      
+      if (i < 4) {
+        string = i; // index from 0
+      } else if (i < 8) {
+        finger = i - 3; // index from 1 (0 is open string)
+      } else if (i == 8) {
+        halfStep = 1; // sharp
+      } else if (i == 9) {
+        halfStep = -1; // flat
+      }
+    }
+  }
 
-  // send note off
-  midi.send(0x80, current_note, 0x64);
-  delay(500);
+  currNote = (string == -1 ? -1 : g2 + fingerSteps[string][finger] + halfStep);
 
-  // increment note pitch
-  current_note++;
+  if (lastNote != -1 && currNote != lastNote) {
+    releaseNote(lastNote);
+  }
+  
+  if (currNote != -1 && currNote != lastNote) {
+    playNote(currNote);
+  }
 
-  // only do one octave
-  if(current_note > 72)
-    current_note = 60;
+  // reset our state
+  lasttouched = currtouched;
+  lastNote = currNote;
 
+  // Save power and avoid crashing, disconnecting BLE
+  delay(20);
 }
