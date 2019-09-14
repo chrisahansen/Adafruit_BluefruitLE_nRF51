@@ -11,12 +11,12 @@
  * 1 = right middle finger = D string
  * 2 = right ring finger = A string
  * 3 = right pinky finger = E string
- * 4 = left index finger = first finger
- * 5 = left middle finger = second finger
- * 6 = left ring finger = third finger
- * 7 = left pinky finger = fourth finger
- * 8 = right thumb = sharp
- * 9 = left thumb = flat
+ * 4 = right thumb = sharp
+ * 7 = left thumb = flat
+ * 8 = left index finger = first finger
+ * 9 = left middle finger = second finger
+ * 10 = left ring finger = third finger
+ * 11 = left pinky finger = fourth finger
  * 
  * --- Derived from the following code
  * Copyright 2017 Don Coleman: Arduino 101 Bluetooth MIDI Controller
@@ -239,12 +239,12 @@ void loop() {
       
       if (i < 4) {
         string = i; // index from 0
-      } else if (i < 8) {
-        finger = i - 3; // index from 1 (0 is open string)
-      } else if (i == 8) {
+      } else if (i == 4) {
         halfStep = 1; // sharp
-      } else if (i == 9) {
+      } else if (i == 7) {
         halfStep = -1; // flat
+      } else if (i > 7 && i < 12) {
+        finger = i - 7; // index from 1 (0 is open string)
       }
     }
   }
