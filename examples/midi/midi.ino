@@ -38,16 +38,21 @@
 
 #define FACTORYRESET_ENABLE         1
 #define MINIMUM_FIRMWARE_VERSION    "0.7.0"
+#define LOOP_DELAY_MS 20
+#define BLE_SCAN_MS 500
 
 #define _BV(bit) (1 << (bit)) 
 
-Adafruit_MPR121 cap = Adafruit_MPR121();
+Adafruit_MPR121 cap_l = Adafruit_MPR121();
+Adafruit_MPR121 cap_r = Adafruit_MPR121();
 
 // TODO: These bits are not used with the current code. Remove?
 // Keeps track of the last pins touched
 // so we know when buttons are 'released'
-uint16_t lasttouched = 0;
-uint16_t currtouched = 0;
+uint16_t lasttouched_l = 0;
+uint16_t lasttouched_r = 0;
+uint16_t currtouched_l = 0;
+uint16_t currtouched_r = 0;
 
 //Buffer to hold 5 bytes of MIDI data. Note the timestamp is forced
 uint8_t midiData[] = {0x80, 0x80, 0x00, 0x00, 0x00};
@@ -150,14 +155,26 @@ void releaseNote(uint8_t note) {
 }
 
 void setupTouchSensor() {
-  Serial.println("Looking for MPR121 Capacitive Touch Sensor"); 
+  Serial.println("Looking for MPR121 Capacitive Touch Sensors");
+  short found_l = 0;
+  short found_r = 0;
+  
   // Default address is 0x5A, if tied to 3.3V its 0x5B
   // If tied to SDA its 0x5C and if SCL then 0x5D
-  if (!cap.begin(0x5A)) {
-    Serial.println("MPR121 not found, check wiring?");
+  if (cap_l.begin(0x5A)) {
+    Serial.println("MPR121 left found");
+    found_l = 1;
+  }
+  if (cap_r.begin(0x5B)) {
+    Serial.println("MPR121 right found");
+    found_r = 1;   
+  }
+  if (found_l + found_r < 2) {
+    Serial.println("Can't find both sensors. Check wiring?");
     while (1);
   }
-  Serial.println("MPR121 found!");
+
+  Serial.println("Sensors found!");
 }
 
 void setupBluetooth()
@@ -220,31 +237,40 @@ void setup(void)
 
 void loop() {
   // interval for each scanning ~ 500ms (non blocking)
-  ble.update(500);
+  ble.update(BLE_SCAN_MS);
 
   // bail if not connected
   if (! isConnected)
     return;
 
   // Get the currently touched pads
-  currtouched = cap.touched();
+  currtouched_l = cap_l.touched();
+  currtouched_r = cap_r.touched();
 
   int string = -1;
   int finger = 0;
   int halfStep = 0;
   
-  for (uint8_t i=0; i<12; i++) {
-    if (currtouched & _BV(i)) {
+  for (uint8_t i=0; i<6; i++) {
+    if (currtouched_r & _BV(i)) {
       // Serial.print(i); Serial.println(" touched");
       
       if (i < 4) {
         string = i; // index from 0
       } else if (i == 4) {
         halfStep = 1; // sharp
-      } else if (i == 7) {
+      }
+    }
+  }
+
+  for (uint8_t i=0; i<6; i++) {
+    if (currtouched_l & _BV(i)) {
+      // Serial.print(i); Serial.println(" touched");
+      
+      if (i < 4) {
+        finger = i + 1; // index from 1 (0 is open string) TODO: may be off by one
+      } else if (i == 4) {
         halfStep = -1; // flat
-      } else if (i > 7 && i < 12) {
-        finger = i - 7; // index from 1 (0 is open string)
       }
     }
   }
@@ -260,9 +286,10 @@ void loop() {
   }
 
   // reset our state
-  lasttouched = currtouched;
+  lasttouched_l = currtouched_l;
+  lasttouched_r = currtouched_r;
   lastNote = currNote;
 
   // Save power and avoid crashing, disconnecting BLE
-  delay(20);
+  delay(LOOP_DELAY_MS);
 }
