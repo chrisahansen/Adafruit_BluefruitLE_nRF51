@@ -1,8 +1,8 @@
 /*
- * Copyright 2018 Chris Hansen
+ * Copyright 2018-2020 Chris Hansen
  * TODO: license
  * 
- * This code goes with the design for the Modolin, a portable instrument
+ * This code goes with the design for the Vioduino, a portable instrument
  * with similar fingering to a violin.
  * 
  * MPR121 pinouts correspond to the following fingers:
@@ -263,13 +263,13 @@ void loop() {
     }
   }
 
-  for (uint8_t i=0; i<6; i++) {
+  for (uint8_t i=7; i<12; i++) {
     if (currtouched_l & _BV(i)) {
       // Serial.print(i); Serial.println(" touched");
       
-      if (i < 4) {
-        finger = i + 1; // index from 1 (0 is open string) TODO: may be off by one
-      } else if (i == 4) {
+      if (i > 7) {
+        finger = i-7; // index from 1
+      } else if (i == 7) {
         halfStep = -1; // flat
       }
     }
